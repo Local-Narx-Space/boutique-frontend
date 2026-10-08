@@ -1,0 +1,2 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {route,observe,exposition} from '../src/metrics.js';
+test('request identifiers never become metric labels',()=>{assert.equal(route('/api/orders/123-456'),'/api/orders/:id');assert.equal(route('/anything-unbounded'),'unmatched');observe('GET','/api/orders/random',200,0.12);const m=exposition();assert.match(m,/route="\/api\/orders\/:id"/);assert.match(m,/le="0.25"} 1/);assert.doesNotMatch(m,/random/);});
