@@ -8,7 +8,23 @@ Runtime: Node.js 22. HTTP port: 8080.
 npm ci --ignore-scripts && npm test
 ```
 
-`docker build -t boutique-frontend:local .` runs service unit tests in the build and creates a non-root runtime image. Runtime bases are pinned by digest. Review and update those digests regularly; pinning does not replace patching.
+`docker build -t boutique-frontend:local .` builds a non-root runtime image; tests run separately in Jenkins’s **Test** stage. Runtime bases are pinned by digest. Review and update those digests regularly; pinning does not replace patching.
+
+To run the same isolated tests locally:
+
+```bash
+mkdir -p test-reports
+docker build --target test -t boutique-frontend:test .
+docker run --rm --user "$(id -u):$(id -g)" --env HOME=/tmp \
+  --cap-drop ALL --security-opt no-new-privileges:true \
+  --mount "type=bind,source=$(pwd)/test-reports,target=/reports" boutique-frontend:test
+```
+
+`ci/test.sh` runs the test suite and writes JUnit XML. Jenkins records these
+results even on failure, stops before image building/publication if tests fail,
+and archives the reports. The test environment image caches dependencies;
+`docker run` executes the tests afresh. Building the runtime image alone does
+not run tests.
 
 ## Configuration
 
