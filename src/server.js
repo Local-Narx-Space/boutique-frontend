@@ -1,8 +1,13 @@
-import {observe,exposition} from './metrics.js';import http from 'node:http';import {readFile} from 'node:fs/promises';import {randomUUID} from 'node:crypto';import {session,signedCookie} from './session.js';
+import {observe,exposition} from './metrics.js';import http from 'node:http';import {readFile} from 'node:fs/promises';import {createHash,randomUUID} from 'node:crypto';import {session,signedCookie} from './session.js';
 const secret=process.env.SESSION_SECRET;if(!secret||secret.length<32)throw Error('SESSION_SECRET must be at least 32 characters');
 const origin=process.env.PUBLIC_ORIGIN||'http://localhost:8080',secure=process.env.COOKIE_SECURE==='true';
 const urls={catalogue:process.env.CATALOGUE_URL||'http://localhost:8081',cart:process.env.CART_URL||'http://localhost:8082',orders:process.env.ORDERS_URL||'http://localhost:8083'};
-const assets=new Map(await Promise.all(['index.html','app.js','style.css'].map(async p=>['/'+(p==='index.html'?'':p),await readFile(new URL('../public/'+p,import.meta.url))])));
+const publicDir=new URL('../public/',import.meta.url);
+const [sourceHtml,appJs,styleCss]=await Promise.all(['index.html','app.js','style.css'].map(name=>readFile(new URL(name,publicDir))));
+const fingerprint=content=>createHash('sha256').update(content).digest('hex').slice(0,16);
+const appPath=`/app.${fingerprint(appJs)}.js`,stylePath=`/style.${fingerprint(styleCss)}.css`;
+const html=Buffer.from(sourceHtml.toString().replace('/app.js',appPath).replace('/style.css',stylePath));
+const assets=new Map([['/',html],[appPath,appJs],[stylePath,styleCss]]);
 let count=0,errors=0;
 function reply(res,status,body){res.writeHead(status,{'Content-Type':'application/json'});res.end(JSON.stringify(body));}
 async function call(url,method='GET',headers={},body){const r=await fetch(url,{method,headers,body,signal:AbortSignal.timeout(5000)});return {status:r.status,body:await r.json()};}
@@ -13,7 +18,7 @@ try{const path=new URL(req.url,'http://internal').pathname;
 if(path==='/health/live')return reply(res,200,{status:'ok'});
 if(path==='/health/ready'){const results=await Promise.all(Object.values(urls).map(u=>call(u+'/health/ready')));const ok=results.every(r=>r.status===200);return reply(res,ok?200:503,{status:ok?'ok':'unavailable'});}
 if(path==='/metrics'){res.writeHead(200,{'Content-Type':'text/plain; version=0.0.4'});return res.end(exposition());}
-if(req.method==='GET'&&assets.has(path)){res.writeHead(200,{'Content-Type':path.endsWith('.js')?'text/javascript':path.endsWith('.css')?'text/css':'text/html','Cache-Control':'no-store','Cloudflare-CDN-Cache-Control':'no-store'});return res.end(assets.get(path));}
+if(req.method==='GET'&&assets.has(path)){const htmlPage=path==='/';const cache=htmlPage?'no-store':'public, max-age=31536000, immutable';res.writeHead(200,{'Content-Type':htmlPage?'text/html':path.endsWith('.js')?'text/javascript':'text/css','Cache-Control':cache,'Cloudflare-CDN-Cache-Control':cache});return res.end(assets.get(path));}
 if(!path.startsWith('/api/'))return reply(res,404,{error:'not_found'});
 res.setHeader('Cache-Control','no-store');if(!['GET','PUT','DELETE','POST'].includes(req.method))return reply(res,405,{error:'method_not_allowed'});
 if(req.method!=='GET'&&req.headers.origin!==origin)return reply(res,403,{error:'invalid_origin'});
