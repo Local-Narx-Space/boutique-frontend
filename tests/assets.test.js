@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {createServer} from 'node:net';
 import {once} from 'node:events';
+import {readFile} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
 
 async function unusedPort(){
   const server=createServer();
@@ -35,6 +37,14 @@ test('HTML uses content-fingerprinted assets with immutable caching',async t=>{
   const jsPath=html.match(/src="(\/app\.[a-f0-9]{16}\.js)"/)?.[1];
   assert.ok(cssPath,'stylesheet URL must include its content fingerprint');
   assert.ok(jsPath,'script URL must include its content fingerprint');
+  for(const [path,file] of [[cssPath,'style.css'],[jsPath,'app.js']]){
+    const content=await readFile(new URL('../public/'+file,import.meta.url));
+    const hash=createHash('sha256').update(content).digest('hex').slice(0,16);
+    assert.ok(path.includes(hash),'asset URL must match its actual contents');
+    const response=await fetch(origin+path);
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()),content);
+  }
+  assert.equal((await fetch(origin+'/style.0000000000000000.css')).status,404);
 
   for(const [path,type] of [[cssPath,'text/css'],[jsPath,'text/javascript']]){
     const response=await fetch(origin+path);
