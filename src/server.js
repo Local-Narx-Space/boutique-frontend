@@ -13,7 +13,7 @@ try{const path=new URL(req.url,'http://internal').pathname;
 if(path==='/health/live')return reply(res,200,{status:'ok'});
 if(path==='/health/ready'){const results=await Promise.all(Object.values(urls).map(u=>call(u+'/health/ready')));const ok=results.every(r=>r.status===200);return reply(res,ok?200:503,{status:ok?'ok':'unavailable'});}
 if(path==='/metrics'){res.writeHead(200,{'Content-Type':'text/plain; version=0.0.4'});return res.end(exposition());}
-if(req.method==='GET'&&assets.has(path)){res.writeHead(200,{'Content-Type':path.endsWith('.js')?'text/javascript':path.endsWith('.css')?'text/css':'text/html'});return res.end(assets.get(path));}
+if(req.method==='GET'&&assets.has(path)){res.writeHead(200,{'Content-Type':path.endsWith('.js')?'text/javascript':path.endsWith('.css')?'text/css':'text/html','Cache-Control':'no-store','Cloudflare-CDN-Cache-Control':'no-store'});return res.end(assets.get(path));}
 if(!path.startsWith('/api/'))return reply(res,404,{error:'not_found'});
 res.setHeader('Cache-Control','no-store');if(!['GET','PUT','DELETE','POST'].includes(req.method))return reply(res,405,{error:'method_not_allowed'});
 if(req.method!=='GET'&&req.headers.origin!==origin)return reply(res,403,{error:'invalid_origin'});
