@@ -144,6 +144,8 @@ const server = http.createServer(async (req, res) => {
       }
     } else if (path === '/api/payments/config' && req.method === 'GET') {
       result = await call(urls.orders + '/payments/config', 'GET', headers);
+    } else if (/^\/api\/orders\/[a-f0-9-]{36}\/payment\/fixture-capture$/.test(path) && req.method === 'POST') {
+      result = await call(urls.orders + path.slice(4), 'POST', headers, JSON.stringify(await input(req) || {}));
     } else if (/^\/api\/orders\/[a-f0-9-]{36}\/payment(?:\/verify)?$/.test(path) && req.method === 'POST') {
       result = await call(urls.orders + path.slice(4), 'POST', headers, JSON.stringify(await input(req) || {}));
     } else if (['/api/admin/dashboard', '/api/admin/products', '/api/admin/orders', '/api/admin/audit'].includes(path) && req.method === 'GET') {

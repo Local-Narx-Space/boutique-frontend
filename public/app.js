@@ -155,7 +155,7 @@ function renderCheckout() {
   if (!$('delivery-name').value) $('delivery-name').value = user.name;
   const root = $('checkout-summary'); root.replaceChildren(element('h2', 'Your order'));
   const total = summaryItems(root, cart.items);
-  root.append(element('p', 'Total ' + money(total), 'cart-total'), element('p', 'Razorpay test mode. No real money is charged or goods shipped.', 'muted'));
+  root.append(element('p', 'Total ' + money(total), 'cart-total'), element('p', paymentConfig.mode === 'fixture' ? 'Local payment simulator. No real payment or charge occurs.' : 'Razorpay test mode. No real money is charged or goods shipped.', 'muted'));
   $('place-order').disabled = !cart.items.length || pending || !paymentConfig.enabled;
   if (!paymentConfig.enabled) root.append(element('p', errorMessages.payments_not_configured, 'form-error'));
   if (!cart.items.length) root.append(link('Your bag is empty. Explore the collection →', '/'));
@@ -203,7 +203,7 @@ async function renderOrder(id) {
       details.append(element('h3', 'Delivery details'), element('p', order.delivery.name), element('p', order.delivery.address),
         element('p', order.delivery.city + ' · ' + order.delivery.postalCode), element('p', order.delivery.country)); receipt.append(details);
     }
-    receipt.append(element('p', order.payment_status === 'demo' ? 'A legacy demo order. No payment was collected.' : 'Razorpay test-mode order. No real money is charged or goods shipped.', 'muted'));
+    receipt.append(element('p', order.payment_status === 'demo' ? 'A legacy demo order. No payment was collected.' : 'Test payment. No real money is charged or goods shipped.', 'muted'));
     if (order.status === 'payment_pending' && user) {
       const pay = element('button', 'Pay with Razorpay (test)');
       pay.disabled = !paymentConfig.enabled;
@@ -290,6 +290,12 @@ function loadRazorpay() {
 }
 async function payForOrder(order) {
   const payment = await api('/orders/' + order.id + '/payment', 'POST');
+  if (payment.mode === 'fixture') {
+    if (!window.confirm('Local payment simulator: no Razorpay transaction will be made and no money will be charged. Simulate a successful test payment?')) return;
+    const proof = await api('/orders/' + order.id + '/payment/fixture-capture', 'POST', {});
+    await completePayment(order, proof);
+    return;
+  }
   await loadRazorpay();
   await new Promise((resolve, reject) => {
     const checkout = new window.Razorpay({
@@ -298,13 +304,7 @@ async function payForOrder(order) {
       prefill: {name: user.name, email: user.email},
       handler: async proof => {
         try {
-          await api('/orders/' + order.id + '/payment/verify', 'POST', proof);
-          // Checkout is paid, regardless of a subsequent cart-cleanup error.
-          for (const item of order.items) {
-            try { await api('/cart/items/' + item.productId, 'DELETE'); } catch { /* Order remains paid and visible. */ }
-          }
-          resetCheckout(); storage('removeItem', 'pending-order');
-          location.assign('/orders/' + order.id + '?confirmed=1'); resolve();
+          await completePayment(order, proof); resolve();
         } catch (error) { reject(error); }
       },
       modal: {ondismiss: () => { location.assign('/orders/' + order.id); resolve(); }},
@@ -313,6 +313,14 @@ async function payForOrder(order) {
     checkout.on('payment.failed', () => message('Payment was not completed. You can retry from this order.'));
     checkout.open();
   });
+}
+async function completePayment(order, proof) {
+  await api('/orders/' + order.id + '/payment/verify', 'POST', proof);
+  for (const item of order.items) {
+    try { await api('/cart/items/' + item.productId, 'DELETE'); } catch { /* Order remains paid and visible. */ }
+  }
+  resetCheckout(); storage('removeItem', 'pending-order');
+  location.assign('/orders/' + order.id + '?confirmed=1');
 }
 
 async function renderAdmin() {
